@@ -14,6 +14,18 @@ from pyclustering.utils import read_sample
 import scipy
 
 
+def calculate_user_cate_dis(category):
+
+    poi_cate = collections.defaultdict(list)
+
+    for line in category.readlines():
+        pid, cateid = line.split()
+        pid = int(pid)
+        cateid = int(cateid)
+        poi_cate[pid].append(cateid)
+    
+    return poi_cate
+
 def dist(loc1, loc2):
     lat1, long1 = loc1[0], loc1[1]
     lat2, long2 = loc2[0], loc2[1]
@@ -61,12 +73,23 @@ def specific_candidate(user_first, user_candidate, cluster):
         temp.add(p)
     user_candidate[k] = temp
 
-  # for k,v in training_user_set.items():
-  #   temp = set()
-  #   for p in v:
-  #     if item_first[k][cluster[p]]:
-  #       temp.add(p)
-  #   limit_user_set[k] = temp
+  return user_candidate
+
+def specific_candidate_(user_first, user_candidate, cluster):
+
+  limit_user_set = collections.defaultdict()
+  
+  for k,v in user_candidate.items():
+    temp = set()
+    for p in v:
+      flag = True
+      for i in cluster[p]:
+        if not user_first[k][i]:
+          flag = False
+          break
+      if flag:
+        temp.add(p)
+    user_candidate[k] = temp
 
   return user_candidate
 
@@ -81,7 +104,7 @@ def specific_candidate(user_first, user_candidate, cluster):
 
 # print(len(check_in))
 
-poi = np.load("./Philadelphia/location.npy", allow_pickle=True).item()
+poi = np.load("/data/fan_xin/Philadelphia/location.npy", allow_pickle=True).item()
 
 # print(len(poi))
 
@@ -127,66 +150,102 @@ def poi_cluster(poi, K):
 # poi_candidate = np.load('./Philadelphia/item_candidate.npy', allow_pickle=True).item()
 
 # Calculate the first layer's distribution
-def first_layer_distribution(training_user_set, cluster):
+def first_layer_distribution(training_user_set, cluster, cluster_num):
   
   user_first_dis = collections.defaultdict(list)
   poi_first_dis = collections.defaultdict(list)
   
   for k,v in training_user_set.items():
-    temp = [0]*1000
+    temp = [0]*cluster_num
     for p in v:
       temp[cluster[p]] += 1
     user_first_dis[k] = temp
-
-  # for k,v in training_poi_set.items():
-  #   temp = [0]*1000
-  #   P = set()
-  #   for u in v:
-  #     for x in training_user_set[u]:
-  #       P.add(x)
-  #   for p in P:
-  #     temp[cluster[p]] += 1
-  #   poi_first_dis[k] = temp
   
   return user_first_dis
 
 # Calculate the first layer's distribution
-def third_layer_distribution(user_candidate, sample_num, cluster):
+def first_layer_distribution_(training_user_set, cluster, cluster_num):
+  
+  user_first_dis = collections.defaultdict(list)
+  poi_first_dis = collections.defaultdict(list)
+  
+  for k,v in training_user_set.items():
+    temp = [0]*cluster_num
+    for p in v:
+      for i in cluster[p]:
+        temp[i] += 1
+    user_first_dis[k] = temp
+  
+  return user_first_dis
+
+# Calculate the first layer's distribution
+def third_layer_distribution(user_candidate, sample_num, cluster, cluster_num):
   
   user_third_dis = collections.defaultdict(list)
   poi_third_dis = collections.defaultdict(list)
   
   user_sample = collections.defaultdict(set)
   poi_sample = collections.defaultdict(set)
-  
+
   for k,v in user_candidate.items():
     v = list(v)
     np.random.shuffle(v)
     if len(v) >= sample_num:
       v = v[:sample_num]
     user_sample[k] = set(v)
-    temp = [0]*1000
+    temp = [0]*cluster_num
     for p in v:
       temp[cluster[p]] += 1
     user_third_dis[k] = temp
-
-  # for k,v in poi_candidate.items():
-  #   temp = [0]*1000
-  #   if not len(v):
-  #     continue
-  #   v = list(v)
-  #   np.random.shuffle(v)
-  #   v = v[:sample_num]
-  #   poi_sample[k] = set(v)
-  #   P = set()
-  #   for u in v:
-  #     for x in limit_user_set[u]:
-  #       P.add(x)
-  #   for p in P:
-  #     temp[cluster[p]] += 1
-  #   poi_third_dis[k] = temp
   
   return user_third_dis, user_sample
+
+# Calculate the first layer's distribution
+def third_layer_distribution_(user_candidate, sample_num, cluster, cluster_num):
+  
+  user_third_dis = collections.defaultdict(list)
+  poi_third_dis = collections.defaultdict(list)
+  
+  user_sample = collections.defaultdict(set)
+  poi_sample = collections.defaultdict(set)
+
+  for k,v in user_candidate.items():
+    v = list(v)
+    np.random.shuffle(v)
+    if len(v) >= sample_num:
+      v = v[:sample_num]
+    user_sample[k] = set(v)
+    temp = [0]*cluster_num
+    for p in v:
+      for i in cluster[p]:
+        temp[i] += 1
+    user_third_dis[k] = temp
+  
+  return user_third_dis, user_sample
+
+# Calculate the first layer's distribution
+def third_layer_distribution_without_sample(user_candidate, cluster, cluster_num):
+  
+  user_third_dis = collections.defaultdict(list)
+
+  for k,v in user_candidate.items():
+    v = list(v)
+    temp = [0]*cluster_num
+    for p in v:
+      for i in cluster[p]:
+        temp[i] += 1
+    user_third_dis[k] = temp
+  
+  return user_third_dis
+
+def calculate_offset(user_first, user_third, user_num):
+
+  collection = list()
+
+  for i in range(user_num):
+    collection.append(JS(user_first[i], user_third[i]))
+
+  return sum(collection)/user_num
 
 
 def JS(x,y):

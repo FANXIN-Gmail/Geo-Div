@@ -24,12 +24,24 @@ def calculate_js(l1_dis, recList, poi_cluster):
     return 1 - (0.5*scipy.stats.entropy(px,M)+0.5*scipy.stats.entropy(py, M))
 
 def calculate_coverage(l1_dis, recList, poi_cluster):
-    
+
     non_zero = set(np.nonzero(l1_dis)[0])
     recList_cluster = set([poi_cluster[item] for item in recList])
     cov = non_zero & recList_cluster
 
     return len(cov)/len(non_zero)
+
+def calculate_coverage_(l1_dis,recList,poi_cate):
+    
+    non_zero = set(np.nonzero(l1_dis)[0])
+    rec_cate = set()
+    for item in recList:
+        for cate in poi_cate[item]:
+            rec_cate.add(cate)
+    cov = non_zero & rec_cate
+
+    return len(cov)/len(non_zero)
+
 
 def calculate_l1_distribution(training_user_set, poi_cluster, cluster_num, sample_num):
     l1_dis = defaultdict(list)

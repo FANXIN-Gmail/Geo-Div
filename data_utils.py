@@ -10,6 +10,26 @@ import torch
 import math
 import random
 
+# Calculate the number of cluster
+def cluster_number(cluster):
+
+    number = set()
+
+    for k,v in cluster.items():
+        for i in v:
+            number.add(i)
+
+    return len(number)
+
+# Count the number of interations
+def Count(Set):
+
+    count = 0
+    for k,v in Set.items():
+        for i in v:
+            count += 1
+    return count
+
 def load_all(test_num=100):
     """ We load all the three file here to save time in each epoch. """
     train_data = pd.read_csv(

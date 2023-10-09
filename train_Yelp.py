@@ -11,6 +11,15 @@ import sys
 
 # os.environ["CUDA_VISIBLE_DEVICES"] =','.join(map(str, [1]))
 
+CUDA_VISIBLE_DEVICES = 0
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+# torch.cuda.is_available() 
+# torch.cuda.device_count()  
+# torch.cuda.current_device()
+
+print(torch.cuda.get_device_name(CUDA_VISIBLE_DEVICES))
+
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
 
@@ -33,33 +42,39 @@ from data_utils import *
 from evaluate import *
 from distribution import *
 
-dataset_base_path="./Tucson"
+dataset_base_path="/data/fan_xin/Philadelphia"
 
-# user_num=4716
-# item_num=7727
-user_num=2419
-item_num=4964
+# Div = "Geo"
+Div = "Cate"
+
+user_num=4716
+item_num=7727
+# user_num=2419
+# item_num=4964
 factor_num=64
 batch_size=1024
 top_k=5
 num_negative_test_val=-1##all 
 
-run_id="s7"
-print(run_id)
-dataset='Tucson'
+sample_number=200
 
-path_save_model_base='./newlossModel/'+dataset+'/s'+run_id
+# Philadelphia
+# Tucson
+
+run_id="s8"
+print(run_id)
+dataset='Philadelphia'
+
+path_save_model_base='/data/fan_xin/newlossModel_/'+dataset+'/s'+run_id
 if (os.path.exists(path_save_model_base)):
     print('has model save path')
 else:
-    os.makedirs(path_save_model_base) 
-
+    os.makedirs(path_save_model_base)
 
 training_user_set = np.load(dataset_base_path+'/training_user_set.npy',allow_pickle=True).item()
 training_item_set = np.load(dataset_base_path+'/training_item_set.npy',allow_pickle=True).item()
-training_set_count = 54976
+training_set_count = Count(training_user_set)
 user_rating_set_all = np.load(dataset_base_path+'/user_rating_set_all.npy',allow_pickle=True).item()
-
 
 def readD(set_matrix,num_):
     user_d=[]
@@ -118,7 +133,7 @@ class BPR(nn.Module):
 
         # self.d_i_train=d_i_train
         # self.d_j_train=d_j_train
-        
+
     def forward(self, user, item_i, item_j, user_item_3, item_user_3, user_js):    
         
         users_embedding=self.embed_user.weight
@@ -136,9 +151,9 @@ class BPR(nn.Module):
         # gcn_users_embedding = (1/4)*users_embedding + (1/4)*gcn1_users_embedding + (1/4)*gcn2_users_embedding + torch.mul(gcn3_users_embedding, user_js)
         # gcn_items_embedding = (1/4)*items_embedding + (1/4)*gcn1_items_embedding + (1/4)*gcn2_items_embedding + (1/4)*gcn3_items_embedding
 
-        gcn_users_embedding = (1/4)*users_embedding + (1/3)*gcn1_users_embedding + (1/2)*gcn2_users_embedding + torch.mul(gcn3_users_embedding, user_js)
-        gcn_items_embedding = (1/4)*items_embedding + (1/3)*gcn1_items_embedding + (1/2)*gcn2_items_embedding + (1/1)*gcn3_items_embedding
-        
+        gcn_users_embedding = (1/4)*users_embedding + (1/4)*gcn1_users_embedding + (1/4)*gcn2_users_embedding + torch.mul(gcn3_users_embedding, user_js)
+        gcn_items_embedding = (1/4)*items_embedding + (1/4)*gcn1_items_embedding + (1/4)*gcn2_items_embedding + (1/4)*gcn3_items_embedding
+
         user = F.embedding(user,gcn_users_embedding)
         item_i = F.embedding(item_i,gcn_items_embedding)
         item_j = F.embedding(item_j,gcn_items_embedding)  
@@ -167,16 +182,28 @@ train_loader = DataLoader(train_dataset,
 #         data_set_count=testing_set_count,all_rating=user_rating_set_all)
 # test_loader_loss = DataLoader(test_dataset_loss,
 #         batch_size=batch_size, shuffle=False, num_workers=0)
-    
+
 model = BPR(user_num, item_num, factor_num, sparse_u_i, sparse_i_u)
 model = model.to('cuda')
 
 optimizer_bpr = torch.optim.Adam(model.parameters(), lr=0.001)#, betas=(0.5, 0.99))
 
-cluster = np.load(dataset_base_path+'/cluster.npy', allow_pickle=True).item()
 user_candidate = np.load(dataset_base_path+'/user_candidate.npy', allow_pickle=True).item()
-user_first = first_layer_distribution(training_user_set, cluster)
-user_candidate = specific_candidate(user_first, user_candidate, cluster)
+
+cluster_num = 0
+offset = 0
+
+if Div == "Geo":
+    pass
+else:
+    cluster = np.load(dataset_base_path+'/cluster_.npy', allow_pickle=True).item()
+    cluster_num  = cluster_number(cluster)
+    user_first = first_layer_distribution_(training_user_set, cluster, cluster_num)
+
+    user_third_temp = third_layer_distribution_without_sample(user_candidate, cluster, cluster_num)
+    offset = calculate_offset(user_first, user_third_temp, user_num)
+
+    user_candidate = specific_candidate_(user_first, user_candidate, cluster)
 
 ########################### TRAINING #####################################
 
@@ -194,12 +221,15 @@ for epoch in range(1000):
     # print(' time:'+str(round(elapsed_time,1)))
     # start_time = time.time()
 
-    user_third, user_sample = third_layer_distribution(user_candidate, 300, cluster)
+    if Div == "Geo":
+        pass 
+    else:
+        user_third, user_sample = third_layer_distribution_(user_candidate, sample_number, cluster, cluster_num)
 
-    PATH_model = path_save_model_base+'/epoch_third'+str(epoch)+'.npy'
-    np.save(PATH_model, user_third, allow_pickle=True)
-    PATH_model = path_save_model_base+'/epoch_sample'+str(epoch)+'.npy'
-    np.save(PATH_model, user_sample, allow_pickle=True)
+    # PATH_model = path_save_model_base+'/epoch_third'+str(epoch)+'.npy'
+    # np.save(PATH_model, user_third, allow_pickle=True)
+    # PATH_model = path_save_model_base+'/epoch_sample'+str(epoch)+'.npy'
+    # np.save(PATH_model, user_sample, allow_pickle=True)
 
     user_js = [0]*user_num
     
@@ -208,14 +238,16 @@ for epoch in range(1000):
         continue
       user_js[u] = JS(user_first[u], user_third[u])
 
-    user_js = torch.tensor([user_js]).t().cuda() * (1/1.57)
+    user_js = torch.tensor([user_js]).t().cuda() * (1/0.2*(4*offset))
+
+    user_sample[user_num-1].add(item_num-1)
     
     u_d=readD(user_sample,user_num)
-    
+
     sparse_u_i=readTrainSparseMatrix(user_sample,True)
 
     # user 3.24 / 1.76 / 1.57
-    
+
     train_loss_sum=[]
     train_loss_sum2=[]
     for user, item_i, item_j in train_loader:
@@ -232,13 +264,13 @@ for epoch in range(1000):
         train_loss_sum.append(loss.item())  
         train_loss_sum2.append(loss2.item())  
         # print(count)
-    
+
     elapsed_time = time.time() - start_time
     train_loss=round(np.mean(train_loss_sum[:-1]),4)#最后一个可能不满足一个batch，所以去掉这样loss就是一致的可以求mean了
     train_loss2=round(np.mean(train_loss_sum2[:-1]),4)#最后一个可能不满足一个batch，所以去掉这样loss就是一致的可以求mean了
     str_print_train="epoch:"+str(epoch)+' time:'+str(round(elapsed_time,1))+'\t train loss:'+str(train_loss)+"="+str(train_loss2)+"+" 
     print('--train--',elapsed_time)
     print(str_print_train)
-    
+
     PATH_model=path_save_model_base+'/epoch'+str(epoch)+'.pt'
     torch.save(model.state_dict(), PATH_model)

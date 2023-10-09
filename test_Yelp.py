@@ -11,6 +11,15 @@ import sys
 
 # os.environ["CUDA_VISIBLE_DEVICES"] =','.join(map(str, [3]))
 
+CUDA_VISIBLE_DEVICES = 0
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+# torch.cuda.is_available() 
+# torch.cuda.device_count()  
+# torch.cuda.current_device()
+
+print(torch.cuda.get_device_name(CUDA_VISIBLE_DEVICES))
+
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
 
@@ -31,7 +40,10 @@ from data_utils import *
 from evaluate import *
 from distribution import *
 
-dataset_base_path="./Philadelphia"
+dataset_base_path="/data/fan_xin/Philadelphia"
+
+Div = "Cate"
+# Div = "Geo"
 
 user_num=4716
 item_num=7727
@@ -42,30 +54,29 @@ batch_size=1024
 top_k=10
 num_negative_test_val=-1##all  
 
+sample_number=500
+
 start_i_test=900
 end_i_test=1000
-setp=5
+setp=10
 
-run_id="s7"
+run_id="s6"
 print(run_id)
 dataset='Philadelphia'
 
-path_save_model_base='./newlossModel/'+dataset+'/s'+run_id
+path_save_model_base='/data/fan_xin/newlossModel_/'+dataset+'/s'+run_id
 if (os.path.exists(path_save_model_base)):
     print('has model save path')
 else:
     pdb.set_trace() 
-
 
 training_user_set = np.load(dataset_base_path+'/training_user_set.npy',allow_pickle=True).item()
 training_item_set = np.load(dataset_base_path+'/training_item_set.npy',allow_pickle=True).item()
 testing_user_set = np.load(dataset_base_path+'/testing_user_set.npy',allow_pickle=True).item()
 testing_item_set = np.load(dataset_base_path+'/testing_item_set.npy',allow_pickle=True).item()
 user_rating_set_all = np.load(dataset_base_path+'/user_rating_set_all.npy',allow_pickle=True).item()
-# training_set_count = 54976
-# testing_set_count = 8129
-training_set_count = 114372
-testing_set_count = 16943
+training_set_count = Count(training_user_set)
+
 
 def readD(set_matrix,num_):
     user_d=[]
@@ -160,10 +171,22 @@ model=model.to('cuda')
 
 optimizer_bpr = torch.optim.Adam(model.parameters(), lr=0.001)#, betas=(0.5, 0.99))
 
-cluster = np.load(dataset_base_path+'/cluster.npy', allow_pickle=True).item()
 user_candidate = np.load(dataset_base_path+'/user_candidate.npy', allow_pickle=True).item()
-user_first = first_layer_distribution(training_user_set, cluster)
-user_candidate = specific_candidate(user_first, user_candidate, cluster)
+
+cluster_num = 0
+offset = 0
+
+if Div == "Geo":
+    pass
+else:
+    cluster = np.load(dataset_base_path+'/cluster_.npy', allow_pickle=True).item()
+    cluster_num  = cluster_number(cluster)
+    user_first = first_layer_distribution_(training_user_set, cluster, cluster_num)
+
+    user_third_temp = third_layer_distribution_without_sample(user_candidate, cluster, cluster_num)
+    offset = calculate_offset(user_first, user_third_temp, user_num)
+
+    user_candidate = specific_candidate_(user_first, user_candidate, cluster)
 
 ########################### TRAINING ##################################### 
 # testing_loader_loss.dataset.ng_sample()
@@ -179,7 +202,10 @@ for epoch in range(start_i_test,end_i_test,setp):
     model.eval()     
     # ######test and val###########    
 
-    user_third, user_sample = third_layer_distribution(user_candidate, 300, cluster)
+    if Div == "Geo":
+        pass 
+    else:
+        user_third, user_sample = third_layer_distribution_(user_candidate, sample_number, cluster, cluster_num)
 
     # PATH_model = path_save_model_base+'/epoch_third'+str(epoch)+'.npy'
     # user_third = np.load(PATH_model, allow_pickle=True).item()
@@ -195,7 +221,9 @@ for epoch in range(start_i_test,end_i_test,setp):
 
 # 3.24 / 1.76 / 1.57
 
-    user_js = torch.tensor([user_js]).t().cuda() * (1/1.76)
+    user_js = torch.tensor([user_js]).t().cuda() * (1/(4*offset))
+
+    user_sample[user_num-1].add(item_num-1)
 
     u_d=readD(user_sample,user_num)
     
@@ -211,25 +239,30 @@ for epoch in range(start_i_test,end_i_test,setp):
     #spend 461s
     test_start_time = time.time()
     for u_i in testing_user_set:
-        
+    
         item_i_list = list(testing_user_set[u_i])
         index_end_i = len(item_i_list)
         item_j_list = list(set_all-training_user_set[u_i]-testing_user_set[u_i])
         item_i_list.extend(item_j_list) 
         pre_one=all_pre[u_i][item_i_list]
-        
-        original = sorted(list(zip(pre_one, item_i_list)), reverse=True)[0:10]
+
+        original = sorted(list(zip(pre_one, item_i_list)), reverse=True)[0:top_k]
         score, recList = zip(*original)
         
         gs_t = calculate_js(np.array(user_first[u_i])/sum(user_first[u_i]), recList, cluster)
-        cov_t = calculate_coverage(user_first[u_i], recList, cluster)
+
+        if Div == "Geo":
+            cov_t = calculate_coverage(user_first[u_i], recList, cluster)
+        else:
+            cov_t = calculate_coverage_(user_first[u_i], recList, cluster)
+
         ild_t = ILD_geo(recList)    
         precision_t = precision(recList, list(testing_user_set[u_i]))
         recall_t = recall(recList, list(testing_user_set[u_i]))
         hr_t,ndcg_t = hr_ndcg_(recList, list(testing_user_set[u_i]), top_k)
         
         elapsed_time = time.time() - test_start_time
-    
+
         HR.append(hr_t)
         NDCG.append(ndcg_t)
         PRECISION.append(precision_t)
