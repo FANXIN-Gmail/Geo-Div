@@ -1,4 +1,4 @@
-Sampling-based epoch differentiation calibrated graph convolution network for point-of-interest recommendation
+# Sampling-based epoch differentiation calibrated graph convolution network for point-of-interest recommendation
 
 
 
